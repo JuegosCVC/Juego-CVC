@@ -156,8 +156,9 @@ section.hero>p{color:var(--muted);max-width:66ch}
 @keyframes pum{from{transform:scale(.4) translateY(0);opacity:1}to{transform:scale(1.4) translateY(-14px);opacity:0}}
 .chispa{position:absolute;left:50%;top:45%;width:9px;height:9px;border-radius:50%;z-index:5;pointer-events:none;animation:chispa .6s ease-out forwards}
 @keyframes chispa{to{transform:translate(var(--x),var(--y)) scale(.3);opacity:0}}
-@media (max-width:400px){.hole{height:88px}.word{bottom:16px}}
-@media (max-width:520px){.hole{height:96px}.word{font-size:.76rem;padding:4px 5px 8px}.board{gap:8px;padding:10px;border-radius:18px}}
+@media (max-width:400px){.hole{height:90px}.word{bottom:19px}}
+@media (max-width:520px){.hole::after{height:20px;bottom:-3px}}
+@media (max-width:520px){.hole{height:96px}.word{font-size:.76rem;padding:4px 4px 7px;line-height:1.12;gap:2px;left:5px;right:5px;top:5px}.board{gap:8px;padding:10px;border-radius:18px}}
 
 /* modal */
 .modal{position:fixed;inset:0;background:rgba(2,55,57,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20;animation:rise .25s both}
@@ -799,7 +800,7 @@ function spawn(){
   if(wantRight){ const idx=pending[Math.floor(Math.random()*pending.length)]; item={ok:true,idx,data:q.correct[idx]}; }
   else { const idx=Math.floor(Math.random()*q.wrong.length); if(visible.some(a=>!a.ok&&a.idx===idx)) return; item={ok:false,idx,data:q.wrong[idx]}; }
   const i=free[Math.floor(Math.random()*free.length)];
-  const w=word(i); w.className='word'; w.innerHTML=`<span class="wi">${iconoPalabra(item.data[0])}</span><span class="wt"></span><span class="life" style="animation-duration:${pace.stay}ms"></span>`; w.querySelector('.wt').textContent=item.data[0]; w.tabIndex=0; w.removeAttribute('aria-hidden');
+  const w=word(i); w.className='word'; w.innerHTML=`<span class="wi">${iconoPalabra(item.data[0])}</span><span class="wt"></span><span class="life" style="animation-duration:${pace.stay}ms"></span>`; w.querySelector('.wt').textContent=item.data[0]; ajustarTexto(w); w.tabIndex=0; w.removeAttribute('aria-hidden');
   item.until=clock+pace.stay; item.locked=false; active[i]=item;
   requestAnimationFrame(()=>requestAnimationFrame(()=>w.classList.add('up')));
 }
@@ -870,6 +871,14 @@ function showEnd(){
   if(!enviado){ enviarConEstado(datosSesion(), $('envio')).then(ok=>{ if(ok) enviado=true; }); }
 }
 
+function ajustarTexto(w){
+  w.style.fontSize=''; const wi=w.querySelector('.wi'); if(wi) wi.style.display='';
+  let t=parseFloat(getComputedStyle(w).fontSize);
+  while(w.scrollHeight>w.clientHeight+1 && t>10){ t-=.5; w.style.fontSize=t+'px'; }
+  if(w.scrollHeight>w.clientHeight+1 && wi){ wi.style.display='none'; t=parseFloat(getComputedStyle(w).fontSize);
+    while(w.scrollHeight>w.clientHeight+1 && t>8.5){ t-=.5; w.style.fontSize=t+'px'; } }
+}
+window.addEventListener('resize',()=>{ for(let i=0;i<HOLES;i++){ const w=word(i); if(w.querySelector('.wt')) ajustarTexto(w); } });
 function progreso(){
   let hechas=0; for(let k=0;k<ri;k++) hechas+=ROUNDS[k].questions.length; hechas+=qi;
   const q=ROUNDS[ri] && ROUNDS[ri].questions[qi]; const f=q&&found ? found.size/q.correct.length : 0;
