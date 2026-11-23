@@ -3,6 +3,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Figtree:wght@400;500;600;700&display=swap">
 <style>
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 :root{
   --petroleo:#023739; --lima:#95D31D; --esmeralda:#02B57D; --pizarra:#585B6D; --lavanda:#F6F4FF;
   --bg:var(--lavanda); --surface:#ffffff; --ink:var(--petroleo); --muted:var(--pizarra); --line:#e2e0ee;
@@ -241,7 +242,7 @@ section.hero>p{color:var(--muted);max-width:66ch}
 .word .wi{display:block;width:21px;height:21px;color:var(--esmeralda);flex:none}
 .word .wi svg{width:100%;height:100%}
 .word.wrong .wi{color:#d39a1e}
-@media (max-width:520px){.word .wi{width:16px;height:16px}}
+@media (max-width:520px){.word .wi{display:none!important}}
 
 /* sello de verificación */
 .sello{position:absolute;left:50%;top:42%;z-index:6;display:flex;align-items:center;gap:4px;padding:4px 10px;border:3px solid var(--esmeralda);border-radius:10px;
@@ -708,7 +709,7 @@ const ROUNDS = [
 
 const PACE = { slow:{stay:7000, every:1900, max:3}, normal:{stay:4800, every:1300, max:4} };
 const $ = id => document.getElementById(id);
-let pace, ri, qi, found, active, clock, nextSpawn, timer, paused, stats, review, tallyWrong, sesion=null, enviado=true, tRound=[], paceName='', racha=0, volando=new Set(), logrosFinal=[];
+let pace, ri, qi, found, active, clock, nextSpawn, timer, paused, stats, review, tallyWrong, sesion=null, enviado=true, tRound=[], paceName='', racha=0, finOla=null, olaActiva=false, historial=[], ultimoHueco=-1, volando=new Set(), logrosFinal=[];
 const TOTALQ = ROUNDS.reduce((a,x)=>a+x.questions.length,0);
 const HOLES = 9;
 
@@ -755,7 +756,7 @@ function renderSteps(){
 function startQuestion(){
   const r=ROUNDS[ri], q=r.questions[qi];
   if(qi===0) tRound[ri]={ini:Date.now()};
-  found=new Set(); active=new Array(HOLES).fill(null); clock=0; nextSpawn=600; paused=false;
+  found=new Set(); active=new Array(HOLES).fill(null); clock=0; nextSpawn=600; paused=false; finOla=null; olaActiva=false; historial=[];
   renderSteps();
   $('rname').textContent = r.name + (r.questions.length>1 ? ` · pregunta ${qi+1} de ${r.questions.length}` : '');
   $('prompt').textContent = q.prompt;
@@ -784,25 +785,53 @@ function tick(){
   if(paused) return;
   clock+=250;
   for(let i=0;i<HOLES;i++){ const a=active[i]; if(a && !a.locked && clock>=a.until) hide(i); }
-  if(clock>=nextSpawn){ spawn(); nextSpawn=clock+pace.every; }
+  if(clock>=nextSpawn){ unaPalabra(); nextSpawn=clock+pace.every; }
 }
-function hide(i){ const w=word(i); w.classList.remove('up'); w.tabIndex=-1; setTimeout(()=>{ if(active[i] && !word(i).classList.contains('up')) resetWord(i); },320); active[i]=null; }
-function spawn(){
+function hide(i){ const w=word(i); w.classList.remove('up'); w.tabIndex=-1; active[i]=null; setTimeout(()=>{ if(!active[i]) resetWord(i); },320); }
+function barajar(a){ a=a.slice(); for(let k=a.length-1;k>0;k--){ const j=Math.floor(Math.random()*(k+1)); [a[k],a[j]]=[a[j],a[k]]; } return a; }
+// Las palabras salen de una en una, al ritmo original. Cada una es correcta o incorrecta
+// con la misma probabilidad (también la primera), nunca más de dos del mismo tipo seguidas
+// y sin repetir la palabra anterior ni una que ya esté en el tablero.
+function unaPalabra(){
   const q=ROUNDS[ri].questions[qi];
-  const visible=active.filter(Boolean);
-  if(visible.length>=pace.max) return;
-  const free=[...Array(HOLES).keys()].filter(i=>!active[i] && !word(i).textContent);
-  if(!free.length) return;
-  const shownCorrect=new Set(visible.filter(a=>a.ok).map(a=>a.idx));
-  const pending=q.correct.map((_,i)=>i).filter(i=>!found.has(i)&&!shownCorrect.has(i));
-  const wantRight = pending.length && (Math.random()<0.65 || visible.every(a=>!a.ok));
-  let item;
-  if(wantRight){ const idx=pending[Math.floor(Math.random()*pending.length)]; item={ok:true,idx,data:q.correct[idx]}; }
-  else { const idx=Math.floor(Math.random()*q.wrong.length); if(visible.some(a=>!a.ok&&a.idx===idx)) return; item={ok:false,idx,data:q.wrong[idx]}; }
-  const i=free[Math.floor(Math.random()*free.length)];
-  const w=word(i); w.className='word'; w.innerHTML=`<span class="wi">${iconoPalabra(item.data[0])}</span><span class="wt"></span><span class="life" style="animation-duration:${pace.stay}ms"></span>`; w.querySelector('.wt').textContent=item.data[0]; ajustarTexto(w); w.tabIndex=0; w.removeAttribute('aria-hidden');
-  item.until=clock+pace.stay; item.locked=false; active[i]=item;
-  requestAnimationFrame(()=>requestAnimationFrame(()=>w.classList.add('up')));
+  const vis=active.filter(Boolean);
+  if(vis.length>=pace.max) return;
+  const libres=[...Array(HOLES).keys()].filter(i=>!active[i] && i!==ultimoHueco);
+  if(!libres.length) return;
+  const prev=historial[historial.length-1];
+  const pend=q.correct.map((_,k)=>k).filter(k=>!found.has(k) && !vis.some(a=>a.ok&&a.idx===k));
+  const malas=q.wrong.map((_,k)=>k).filter(k=>!vis.some(a=>!a.ok&&a.idx===k) && !(prev&&!prev.ok&&prev.idx===k));
+  const ult=historial.slice(-2);
+  let ok = Math.random()<0.5;
+  if(ult.length===2 && ult[0].ok===ult[1].ok) ok=!ult[0].ok;
+  if(ok && !pend.length) ok=false;
+  if(!ok && !malas.length){ if(!pend.length) return; ok=true; }
+  const lista = ok ? pend : malas;
+  const idx = lista[Math.floor(Math.random()*lista.length)];
+  const item = ok ? {ok:true,idx,data:q.correct[idx]} : {ok:false,idx,data:q.wrong[idx]};
+  const h=libres[Math.floor(Math.random()*libres.length)];
+  historial.push({ok,idx}); ultimoHueco=h;
+  ponerPalabra(h, item, 0);
+}
+function oleada(){
+  const q=ROUNDS[ri].questions[qi];
+  const pend=barajar(q.correct.map((_,k)=>k).filter(k=>!found.has(k)));
+  if(!pend.length) return;
+  const n=pace.max;
+  const maxBuenas=Math.max(1, Math.min(pend.length, n-1, Math.ceil(n/2)));
+  const nb=1+Math.floor(Math.random()*maxBuenas);
+  const malas=barajar(q.wrong.map((_,k)=>k)).slice(0, Math.min(q.wrong.length, n-nb));
+  const items=barajar(pend.slice(0,nb).map(k=>({ok:true,idx:k,data:q.correct[k]})).concat(malas.map(k=>({ok:false,idx:k,data:q.wrong[k]}))));
+  const libres=barajar([...Array(HOLES).keys()].filter(i=>!active[i]));
+  items.forEach((item,k)=>{ if(k<libres.length) ponerPalabra(libres[k], item, k*140); });
+  olaActiva=true;
+}
+function ponerPalabra(i, item, demora){
+  const w=word(i); w.className='word';
+  w.innerHTML=`<span class="wi">${iconoPalabra(item.data[0])}</span><span class="wt"></span><span class="life" style="animation-duration:${pace.stay}ms"></span>`;
+  w.querySelector('.wt').textContent=item.data[0]; ajustarTexto(w); w.tabIndex=0; w.removeAttribute('aria-hidden');
+  item.until=clock+pace.stay+demora; item.locked=false; active[i]=item;
+  setTimeout(()=>requestAnimationFrame(()=>{ if(active[i]===item){ ajustarTexto(w); w.classList.add('up'); } }), demora+16);
 }
 function hit(i){
   const a=active[i]; if(!a||a.locked||paused||!timer) return;
@@ -878,6 +907,7 @@ function ajustarTexto(w){
   if(w.scrollHeight>w.clientHeight+1 && wi){ wi.style.display='none'; t=parseFloat(getComputedStyle(w).fontSize);
     while(w.scrollHeight>w.clientHeight+1 && t>8.5){ t-=.5; w.style.fontSize=t+'px'; } }
 }
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>{ for(let i=0;i<HOLES;i++){ const w=word(i); if(w.querySelector('.wt')) ajustarTexto(w); } });
 window.addEventListener('resize',()=>{ for(let i=0;i<HOLES;i++){ const w=word(i); if(w.querySelector('.wt')) ajustarTexto(w); } });
 function progreso(){
   let hechas=0; for(let k=0;k<ri;k++) hechas+=ROUNDS[k].questions.length; hechas+=qi;
